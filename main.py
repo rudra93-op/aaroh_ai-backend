@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 import shutil
-from chord_engine import predict_chords
+from chord_engine import analyze_audio
 
 app = FastAPI()
 
@@ -9,5 +9,5 @@ async def analyze(file: UploadFile = File(...)):
     with open("temp.wav", "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    chords = predict_chords("temp.wav")
-    return {"chords": chords}
+    result = analyze_audio("temp.wav")
+    return result

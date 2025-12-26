@@ -2,4 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .env
+temp.wav
+temp_*.wav
+
 

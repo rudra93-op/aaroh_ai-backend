@@ -1,48 +1,47 @@
-# chord_engine.py
+import librosa
+import os
 
-from madmom.audio.chroma import DeepChromaProcessor
-from madmom.features.chords import DeepChromaChordRecognitionProcessor
-from madmom.features.beats import RNNBeatProcessor
-from madmom.features.tempo import TempoEstimationProcessor
-
-
-def detect_bpm(audio_path: str) -> float:
-    """
-    Detect global BPM using beat activations
-    """
-    # Step 1: Beat activation
-    beat_proc = RNNBeatProcessor()
-    beat_activations = beat_proc(audio_path)
-
-    # Step 2: Tempo estimation
-    tempo_proc = TempoEstimationProcessor(fps=100)
-    tempo = tempo_proc(beat_activations)
-
-    bpm = round(float(tempo[0][0]), 2)
-    return bpm
+from madmom.features.chords import (
+    CNNChordFeatureProcessor,
+    CRFChordRecognitionProcessor
+)
 
 
-def analyze_audio(audio_path: str):
-    """
-    Analyze audio and return BPM + chord timeline
-    """
+# ---------- helpers ----------
+def normalize_bpm(bpm: float) -> float:
+    if bpm > 140:
+        bpm = bpm / 2
+    return round(float(bpm), 2)
 
-    # -------- BPM --------
-    bpm = detect_bpm(audio_path)
 
-    # -------- CHORDS --------
-    chroma = DeepChromaProcessor()(audio_path)
-    chord_proc = DeepChromaChordRecognitionProcessor()
-    chords = chord_proc(chroma)
+def clean_time(t: float) -> float:
+    return round(float(t), 2)
 
-    chord_list = [
-        {
-            "start": float(start),
-            "end": float(end),
+
+# ---------- main ----------
+def analyze_audio(file_path: str):
+    # 1️⃣ Load audio for BPM (librosa handles mp3/wav)
+    y, sr = librosa.load(file_path, sr=44100, mono=True)
+
+    # BPM only from first 30 sec (FAST)
+    y_short = y[: sr * 30]
+    bpm, _ = librosa.beat.beat_track(y=y_short, sr=sr)
+    bpm = normalize_bpm(bpm)
+
+    # 2️⃣ Chord features (CORRECT processor)
+    feature_proc = CNNChordFeatureProcessor()
+    chord_proc = CRFChordRecognitionProcessor()
+
+    features = feature_proc(file_path)
+    chords = chord_proc(features)
+
+    chord_list = []
+    for start, end, label in chords:
+        chord_list.append({
+            "start": clean_time(start),
+            "end": clean_time(end),
             "chord": label
-        }
-        for start, end, label in chords
-    ]
+        })
 
     return {
         "bpm": bpm,

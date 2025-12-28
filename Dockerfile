@@ -1,35 +1,42 @@
 FROM python:3.11-slim
 
-# system dependencies
+# ----------------------------
+# System dependencies
+# ----------------------------
 RUN apt-get update && apt-get install -y \
     build-essential \
     ffmpeg \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# copy lock file
+# ----------------------------
+# Python dependencies
+# ----------------------------
 COPY requirements.lock.txt .
 
-# upgrade pip
 RUN pip install --upgrade pip
 
-# install Cython first (required by madmom)
-RUN pip install Cython==3.2.3
+# Install all Python deps in correct order
+RUN pip install --no-cache-dir \
+    Cython==3.2.3 \
+    numpy==1.23.5 \
+    scipy==1.9.3 \
+    librosa==0.11.0 \
+    madmom==0.16.1 \
+    fastapi \
+    uvicorn \
+    python-multipart \
+    soundfile
 
-# install numpy & scipy explicitly (order matters)
-RUN pip install numpy==1.23.5 scipy==1.9.3
-
-# install madmom without build isolation
-RUN pip install --no-build-isolation madmom==0.16.1 && \
-    sed -i "s/from collections import MutableSequence/from collections.abc import MutableSequence/" \
+# Patch madmom for Python 3.11
+RUN sed -i "s/from collections import MutableSequence/from collections.abc import MutableSequence/" \
     /usr/local/lib/python3.11/site-packages/madmom/processors.py
 
-
-# install remaining deps (if any)
-RUN pip install python-multipart fastapi uvicorn
-
-# copy app code
+# ----------------------------
+# App code
+# ----------------------------
 COPY . .
 
 EXPOSE 8000

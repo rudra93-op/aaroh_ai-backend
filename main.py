@@ -8,8 +8,7 @@ app = FastAPI()
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    # preserve extension (IMPORTANT)
-    ext = os.path.splitext(file.filename)[1]
+    ext = os.path.splitext(file.filename)[1].lower()
     temp_path = f"temp_audio{ext}"
 
     with open(temp_path, "wb") as buffer:

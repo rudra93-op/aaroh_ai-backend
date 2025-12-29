@@ -12,27 +12,35 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # ----------------------------
-# Python dependencies
+# Upgrade pip
 # ----------------------------
-COPY requirements.lock.txt .
-
 RUN pip install --upgrade pip
 
-# Install all Python deps in correct order
-RUN pip install --no-cache-dir \
-    Cython==3.2.3 \
-    numpy==1.23.5 \
-    scipy==1.9.3 \
-    librosa==0.11.0 \
-    madmom==0.16.1 \
-    fastapi \
-    uvicorn \
-    python-multipart \
-    soundfile
+# ----------------------------
+# Core numeric stack (ORDER MATTERS)
+# ----------------------------
+RUN pip install --no-cache-dir numpy==1.23.5
+RUN pip install --no-cache-dir scipy==1.9.3
+
+# ----------------------------
+# madmom (NO build isolation)
+# ----------------------------
+RUN pip install --no-cache-dir Cython==3.2.3
+RUN pip install --no-cache-dir --no-build-isolation madmom==0.16.1
 
 # Patch madmom for Python 3.11
 RUN sed -i "s/from collections import MutableSequence/from collections.abc import MutableSequence/" \
     /usr/local/lib/python3.11/site-packages/madmom/processors.py
+
+# ----------------------------
+# Audio + API libs
+# ----------------------------
+RUN pip install --no-cache-dir \
+    librosa==0.11.0 \
+    soundfile \
+    fastapi \
+    uvicorn \
+    python-multipart
 
 # ----------------------------
 # App code

@@ -1,8 +1,6 @@
 FROM python:3.11-slim
 
-# ----------------------------
-# System dependencies
-# ----------------------------
+# system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     ffmpeg \
@@ -11,40 +9,33 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# ----------------------------
-# Upgrade pip
-# ----------------------------
+# upgrade pip FIRST
 RUN pip install --upgrade pip
 
-# ----------------------------
-# Core numeric stack (ORDER MATTERS)
-# ----------------------------
-RUN pip install --no-cache-dir numpy==1.23.5
-RUN pip install --no-cache-dir scipy==1.9.3
+# 🔒 HARD PIN NUMPY & SCIPY (NO NumPy 2 EVER)
+RUN pip install \
+    numpy==1.23.5 \
+    scipy==1.9.3
 
-# ----------------------------
-# madmom (NO build isolation)
-# ----------------------------
-RUN pip install --no-cache-dir Cython==3.2.3
-RUN pip install --no-cache-dir --no-build-isolation madmom==0.16.1
+# Cython required by madmom
+RUN pip install Cython==3.2.3
 
-# Patch madmom for Python 3.11
-RUN sed -i "s/from collections import MutableSequence/from collections.abc import MutableSequence/" \
+# madmom (compiled against NumPy 1.x)
+RUN pip install --no-build-isolation madmom==0.16.1 && \
+    sed -i "s/from collections import MutableSequence/from collections.abc import MutableSequence/" \
     /usr/local/lib/python3.11/site-packages/madmom/processors.py
 
-# ----------------------------
-# Audio + API libs
-# ----------------------------
-RUN pip install --no-cache-dir \
-    librosa==0.11.0 \
-    soundfile \
+# librosa compatible with NumPy 1.23
+RUN pip install librosa==0.10.2.post1
+
+# API dependencies (DO NOT let these upgrade numpy)
+RUN pip install \
     fastapi \
     uvicorn \
-    python-multipart
+    python-multipart \
+    soundfile
 
-# ----------------------------
-# App code
-# ----------------------------
+# copy app
 COPY . .
 
 EXPOSE 8000

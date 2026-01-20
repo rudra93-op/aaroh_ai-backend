@@ -5,7 +5,17 @@ from chord_engine import analyze_audio
 
 app = FastAPI()
 
+# ===============================
+# ✅ HEALTH CHECK (RENDER / UPTIME)
+# ===============================
+@app.get("/health")
+@app.head("/health")
+def health():
+    return {"status": "ok"}
 
+# ===============================
+# 🎵 AI ANALYZE ENDPOINT
+# ===============================
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     ext = os.path.splitext(file.filename)[1].lower()

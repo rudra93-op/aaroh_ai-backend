@@ -1,16 +1,24 @@
-from fastapi import UploadFile, File, Form
-import numpy as npmport librosa
+from fastapi import FastAPI, UploadFile, File, Form
+import numpy as np
+import librosa
 import os
 import shutil
 
-# In-memory cache (later replace with Redis)
+from chord_engine import analyze_audio
+
+app = FastAPI()
+
+# ===============================
+# In-memory song state
+# (later replace with Redis / DB)
+# ===============================
 SONG_STATE = {
     "bpm": None,
     "chords": []
 }
 
 # ===============================
-# ✅ HEALTH CHECK (RENDER / UPTIME)
+# HEALTH CHECK (Render / Uptime)
 # ===============================
 @app.get("/health")
 @app.head("/health")
@@ -18,18 +26,37 @@ def health():
     return {"status": "ok"}
 
 
+# ===============================
+# UPLOAD SONG (offline analysis)
+# ===============================
+@app.post("/upload")
+async def upload_song(file: UploadFile = File(...)):
+    ext = os.path.splitext(file.filename)[1]
+    temp_path = f"temp_song{ext}"
+
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
         result = analyze_audio(temp_path)
+
         SONG_STATE["bpm"] = result["bpm"]
         SONG_STATE["chords"] = result["chords"]
-        return {"status": "song_loaded"}
+
+        return {
+            "status": "song_loaded",
+            "bpm": result["bpm"],
+            "chord_count": len(result["chords"])
+        }
+
     finally:
-        os.remove(temp_path)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
+# ===============================
+# REALTIME CHUNK FEEDBACK
+# ===============================
 @app.post("/realtime/chunk")
 async def realtime_chunk(
     audio: UploadFile = File(...),
@@ -38,7 +65,8 @@ async def realtime_chunk(
     """
     Realtime feedback API
     """
-    # 1️⃣ Find expected chord
+
+    # 1️⃣ Find expected chord at timestamp
     expected = None
     for c in SONG_STATE["chords"]:
         if c["start"] <= timestamp <= c["end"]:
@@ -65,12 +93,12 @@ async def realtime_chunk(
         user_chroma = chroma.mean(axis=1)
         user_chroma /= (np.linalg.norm(user_chroma) + 1e-6)
 
+        # expected["chroma"] must be saved during upload (next step)
         ref_chroma = np.array(expected["chroma"])
 
         # 4️⃣ Cosine similarity
         confidence = float(np.dot(user_chroma, ref_chroma))
-
-        is_correct = confidence >= 0.7  # threshold (tunable)
+        is_correct = confidence >= 0.7  # threshold
 
         return {
             "expected_chord": expected["chord"],
@@ -79,4 +107,5 @@ async def realtime_chunk(
         }
 
     finally:
-        os.remove(chunk_path)
+        if os.path.exists(chunk_path):
+            os.remove(chunk_path)

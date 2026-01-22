@@ -1,6 +1,6 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
 
-# ---------------- SYSTEM DEPS ----------------
+# ---------------- SYSTEM DEPENDENCIES ----------------
 RUN apt-get update && apt-get install -y \
     build-essential \
     ffmpeg \
@@ -12,24 +12,19 @@ WORKDIR /app
 # ---------------- PYTHON TOOLING ----------------
 RUN pip install --upgrade pip setuptools wheel
 
-# ---------------- CORE NUMERIC STACK (PINNED) ----------------
-# MUST be installed BEFORE madmom
+# ---------------- NUMERIC STACK (PINNED) ----------------
 RUN pip install \
     numpy==1.23.5 \
     scipy==1.9.3
 
 # ---------------- BUILD TOOLS ----------------
-RUN pip install Cython==3.2.3
+RUN pip install Cython==0.29.36
 
 # ---------------- AUDIO + ML ----------------
 RUN pip install \
-    librosa==0.11.0 \
+    librosa==0.10.1 \
     soundfile \
     madmom==0.16.1
-
-# ---- madmom Python 3.11 FIX ----
-RUN sed -i "s/from collections import MutableSequence/from collections.abc import MutableSequence/" \
-    /usr/local/lib/python3.11/site-packages/madmom/processors.py
 
 # ---------------- API ----------------
 RUN pip install \

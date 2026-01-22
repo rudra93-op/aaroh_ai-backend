@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-# ---------------- SYSTEM DEPENDENCIES ----------------
+# ---------------- SYSTEM ----------------
 RUN apt-get update && apt-get install -y \
     build-essential \
     ffmpeg \
@@ -12,19 +12,22 @@ WORKDIR /app
 # ---------------- PYTHON TOOLING ----------------
 RUN pip install --upgrade pip setuptools wheel
 
-# ---------------- NUMERIC STACK (PINNED) ----------------
+# ---------------- NUMERIC STACK (MUST COME FIRST) ----------------
 RUN pip install \
     numpy==1.23.5 \
     scipy==1.9.3
 
-# ---------------- BUILD TOOLS ----------------
+# ---------------- CYTHON (MADMOM SAFE) ----------------
 RUN pip install Cython==0.29.36
 
-# ---------------- AUDIO + ML ----------------
+# ---------------- AUDIO LIBS ----------------
 RUN pip install \
     librosa==0.10.1 \
-    soundfile \
-    madmom==0.16.1
+    soundfile
+
+# ---------------- MADMOM (SOURCE INSTALL – KEY FIX) ----------------
+RUN pip install --no-build-isolation \
+    git+https://github.com/CPJKU/madmom.git
 
 # ---------------- API ----------------
 RUN pip install \
@@ -32,7 +35,7 @@ RUN pip install \
     uvicorn \
     python-multipart
 
-# ---------------- APP CODE ----------------
+# ---------------- APP ----------------
 COPY . .
 
 EXPOSE 8000

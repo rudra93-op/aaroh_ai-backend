@@ -1,12 +1,15 @@
 # chord_engine.py
 import librosa
 import numpy as np
+
 from madmom.features.chords import (
     CNNChordFeatureProcessor,
     CRFChordRecognitionProcessor
 )
 
-# ---------------- helpers ----------------
+# ===============================
+# Helpers
+# ===============================
 
 def clean_time(t: float) -> float:
     return round(float(t), 2)
@@ -22,58 +25,85 @@ def normalize_bpm(bpm: float) -> float:
     return round(float(bpm), 2)
 
 
+# ===============================
+# BPM (FAST + STABLE)
+# ===============================
+
 def estimate_bpm(file_path: str) -> float:
     y, sr = librosa.load(
         file_path,
         sr=44100,
         mono=True,
-        offset=10.0,   # skip intro
-        duration=30.0  # speed
+        offset=10.0,      # skip intro
+        duration=30.0     # limit for speed
     )
+
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    tempos = librosa.beat.tempo(onset_envelope=onset_env, sr=sr, aggregate=None)
-    return normalize_bpm(float(tempos.mean()))
+    tempos = librosa.beat.tempo(
+        onset_envelope=onset_env,
+        sr=sr,
+        aggregate=None
+    )
+
+    bpm = float(tempos.mean())
+    return normalize_bpm(bpm)
 
 
-def extract_reference_chroma(y, sr, start, end):
-    y_seg = y[int(start * sr): int(end * sr)]
-    if len(y_seg) < sr * 0.3:
-        return None
+# ===============================
+# Chords + Reference Chroma
+# ===============================
 
-    chroma = librosa.feature.chroma_cqt(y=y_seg, sr=sr)
-    ref = chroma.mean(axis=1)
-    ref /= (np.linalg.norm(ref) + 1e-6)
-    return ref.tolist()
-
-
-# ---------------- main ----------------
-
-def analyze_audio(file_path: str):
-    # Load full audio once
-    y, sr = librosa.load(file_path, sr=44100, mono=True)
-
-    # BPM
-    bpm = estimate_bpm(file_path)
-
-    # Chord recognition
+def extract_chords_with_chroma(file_path: str):
+    # Chord recognition (madmom)
     feature_proc = CNNChordFeatureProcessor()
     chord_proc = CRFChordRecognitionProcessor()
 
     features = feature_proc(file_path)
     chords = chord_proc(features)
 
-    chord_list = []
-    for start, end, label in chords:
-        chroma = extract_reference_chroma(y, sr, start, end)
+    # Load audio once for chroma
+    y, sr = librosa.load(file_path, sr=44100, mono=True)
 
-        chord_list.append({
-            "start": clean_time(start),
-            "end": clean_time(end),
+    result = []
+
+    for start, end, label in chords:
+        start_t = max(0.0, start)
+        end_t = max(start_t + 0.05, end)
+
+        # Slice audio for this chord
+        s = int(start_t * sr)
+        e = int(end_t * sr)
+        segment = y[s:e]
+
+        if len(segment) == 0:
+            continue
+
+        # Chroma extraction
+        chroma = librosa.feature.chroma_cqt(y=segment, sr=sr)
+        chroma_vec = chroma.mean(axis=1)
+
+        # Normalize chroma
+        chroma_vec /= (np.linalg.norm(chroma_vec) + 1e-6)
+
+        result.append({
+            "start": clean_time(start_t),
+            "end": clean_time(end_t),
             "chord": label,
-            "chroma": chroma
+            "chroma": chroma_vec.tolist()
         })
+
+    return result
+
+
+# ===============================
+# MAIN ANALYSIS
+# ===============================
+
+def analyze_audio(file_path: str):
+    bpm = estimate_bpm(file_path)
+    chords = extract_chords_with_chroma(file_path)
 
     return {
         "bpm": bpm,
-        "chords": chord_list
+        "chords": chords
     }

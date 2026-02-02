@@ -5,6 +5,7 @@ import os
 import uuid  # ✅ Import UUID for unique filenames
 import numpy as np
 import librosa
+import subprocess
 from chord_engine import analyze_audio
 
 app = FastAPI()
@@ -119,7 +120,18 @@ async def realtime_chunk(
 
         # 3️⃣ Extract chroma
         # Load audio (limited duration for speed)
-        y, sr = librosa.load(chunk_path, sr=44100, mono=True, duration=1.5)
+        wav_path = chunk_path.replace(".webm", ".wav")
+
+subprocess.run([
+    "ffmpeg", "-y",
+    "-i", chunk_path,
+    "-ac", "1",
+    "-ar", "44100",
+    wav_path
+], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+y, sr = librosa.load(wav_path, sr=44100, mono=True, duration=1.5)
+
 
         if len(y) == 0:
              return {"expected_chord": expected["chord"], "confidence": 0, "is_correct": False}
@@ -155,8 +167,5 @@ async def realtime_chunk(
 
     finally:
         # Always clean up
-        if os.path.exists(chunk_path):
-            try:
-                os.remove(chunk_path)
-            except Exception:
-                pass
+       if os.path.exists(wav_path):
+    os.remove(wav_path)

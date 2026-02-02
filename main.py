@@ -120,7 +120,7 @@ async def realtime_chunk(
             stderr=subprocess.DEVNULL
         )
 
-        y, sr = librosa.load(wav_path, sr=44100, mono=True, duration=1.5)
+       y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=1.0)
 
         if len(y) == 0:
             return {"expected_chord": expected["chord"], "confidence": 0.0, "is_correct": False}

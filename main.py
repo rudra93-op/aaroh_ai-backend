@@ -101,71 +101,49 @@ async def realtime_chunk(
             break
 
     if expected is None or expected["chord"] == "N":
-        return { "expected_chord": None, "confidence": 0.0, "is_correct": False }
+        return {"expected_chord": None, "confidence": 0.0, "is_correct": False}
 
     # 2️⃣ Save chunk with CORRECT EXTENSION & UNIQUE NAME
     unique_id = uuid.uuid4().hex
-    
-    # ✅ FIX: Use the extension from the uploaded file (usually .webm)
-    # If no extension provided, default to .webm (standard for browsers)
-    ext = os.path.splitext(audio.filename)[1] 
-    if not ext:
-        ext = ".webm"
-        
+    ext = os.path.splitext(audio.filename)[1] or ".webm"
     chunk_path = f"chunk_{unique_id}{ext}"
+    wav_path = f"chunk_{unique_id}.wav"  # Always safe
 
     try:
         with open(chunk_path, "wb") as buffer:
             shutil.copyfileobj(audio.file, buffer)
 
-        # 3️⃣ Extract chroma
-        # Load audio (limited duration for speed)
-        wav_path = chunk_path.replace(".webm", ".wav")
+        # Convert to WAV
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", chunk_path, "-ac", "1", "-ar", "44100", wav_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
 
-subprocess.run([
-    "ffmpeg", "-y",
-    "-i", chunk_path,
-    "-ac", "1",
-    "-ar", "44100",
-    wav_path
-], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-y, sr = librosa.load(wav_path, sr=44100, mono=True, duration=1.5)
-
+        y, sr = librosa.load(wav_path, sr=44100, mono=True, duration=1.5)
 
         if len(y) == 0:
-             return {"expected_chord": expected["chord"], "confidence": 0, "is_correct": False}
+            return {"expected_chord": expected["chord"], "confidence": 0.0, "is_correct": False}
 
         chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
         user_chroma = chroma.mean(axis=1)
-        
-        # Normalize
+
         norm = np.linalg.norm(user_chroma)
         if norm > 0:
             user_chroma /= norm
 
         ref_chroma = np.array(expected["chroma"])
-
-        # 4️⃣ Compare
         confidence = float(np.dot(user_chroma, ref_chroma))
-        is_correct = confidence >= 0.7 
+        is_correct = confidence >= 0.7
 
-        return {
-            "expected_chord": expected["chord"],
-            "confidence": round(confidence, 3),
-            "is_correct": is_correct
-        }
+        return {"expected_chord": expected["chord"], "confidence": round(confidence, 3), "is_correct": is_correct}
 
     except Exception as e:
         print(f"❌ Realtime Error: {e}")
-        # Return a safe fallback
-        return {
-            "expected_chord": expected["chord"] if expected else None,
-            "confidence": 0.0,
-            "is_correct": False
-        }
+        return {"expected_chord": expected["chord"] if expected else None, "confidence": 0.0, "is_correct": False}
 
     finally:
-        # Always clean up
-       if os.path.exists(wav_path):
-    os.remove(wav_path)
+        if os.path.exists(chunk_path):
+            os.remove(chunk_path)
+        if os.path.exists(wav_path):
+            os.remove(wav_path)

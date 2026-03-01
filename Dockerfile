@@ -31,10 +31,11 @@ RUN pip install \
 RUN pip install --no-build-isolation \
     git+https://github.com/CPJKU/madmom.git
 
-# ---------------- API ----------------
+# ---------------- API (✅ WEBSOCKETS ADDED) ----------------
 RUN pip install \
     fastapi \
-    uvicorn \
+    "uvicorn[standard]" \
+    websockets \
     python-multipart
 
 # ---------------- APP ----------------

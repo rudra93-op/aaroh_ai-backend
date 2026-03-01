@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# ---------------- PYTHON TOOLING ----------------
-RUN pip install --upgrade pip setuptools wheel
+# ---------------- PYTHON TOOLING (✅ FIXED) ----------------
+# setuptools 70+ me pkg_resources hata diya gaya hai, isliye hum isko pin kar rahe hain
+RUN pip install --upgrade pip wheel
+RUN pip install "setuptools<70.0.0"
 
 # ---------------- NUMERIC STACK (MUST COME FIRST) ----------------
 RUN pip install \

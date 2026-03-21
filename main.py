@@ -48,6 +48,8 @@ def health():
 # ===============================
 @app.post("/upload")
 async def upload_song(file: UploadFile = File(...)):
+    print(f"\n🎵 [UPLOAD START] New song received: {file.filename}", flush=True)
+    
     unique_id = uuid.uuid4().hex
     ext = os.path.splitext(file.filename)[1] or ".mp3"
     temp_path = f"temp_{unique_id}{ext}"
@@ -55,6 +57,9 @@ async def upload_song(file: UploadFile = File(...)):
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        
+        print(f"⏳ [UPLOAD] File saved locally. Starting Madmom AI Analysis...", flush=True)
+        start_time = time.time()
 
         # Run Analysis
         result = analyze_audio(temp_path)
@@ -62,8 +67,9 @@ async def upload_song(file: UploadFile = File(...)):
         # Update State
         SONG_STATE["bpm"] = result["bpm"]
         SONG_STATE["chords"] = result["chords"]
-
-        print(f"✅ Analyzed: {result['bpm']} BPM, {len(result['chords'])} Chords")
+        
+        analysis_time = time.time() - start_time
+        print(f"✅ [UPLOAD SUCCESS] Analysis finished in {analysis_time:.2f}s | BPM: {result['bpm']} | Total Chords: {len(result['chords'])}", flush=True)
 
         return {
             "status": "song_loaded",
@@ -73,12 +79,13 @@ async def upload_song(file: UploadFile = File(...)):
         }
 
     except Exception as e:
-        print(f"❌ Upload Error: {e}")
+        print(f"❌ [UPLOAD ERROR] Failed to analyze song: {e}", flush=True)
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+            print(f"🧹 [UPLOAD CLEANUP] Temporary file deleted.", flush=True)
 
 # ===============================
 # Get Song State
@@ -99,7 +106,7 @@ def song_state():
 @app.websocket("/ws/realtime")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("✅ [WS] Client connected successfully!")
+    print("\n🌐 [WEBSOCKET] New Client Connected! Ready for live practice.", flush=True)
     
     try:
         while True:
@@ -111,10 +118,10 @@ async def websocket_endpoint(websocket: WebSocket):
             audio_b64 = data.get("audio_data")
 
             if not audio_b64:
-                print("⚠️ [WS] Received empty audio chunk")
+                print(f"⚠️ [WS BEAT {beat_index}] Received empty audio chunk. Skipping.", flush=True)
                 continue
 
-            print(f"📥 [WS] Received chunk - Beat: {beat_index}, Time: {timestamp:.2f}s")
+            print(f"📥 [WS BEAT {beat_index}] Chunk received at song time {timestamp:.2f}s. Processing...", flush=True)
             start_time = time.time()  # ⏱️ Start timer
 
             # 2. Find Expected Chord
@@ -126,6 +133,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # If no chord is playing (N.C.)
             if not expected or expected["chord"] == "N":
+                print(f"ℹ️ [WS BEAT {beat_index}] No chord expected (Silence/N.C.) at this time.", flush=True)
                 await websocket.send_json({
                     "beatIndex": beat_index,
                     "expected_chord": None,
@@ -153,22 +161,20 @@ async def websocket_endpoint(websocket: WebSocket):
                 )
 
                 if not os.path.exists(wav_path):
-                    raise Exception("FFmpeg conversion failed")
+                    raise Exception("FFmpeg conversion failed. Corrupt chunk.")
 
                 # 4. Fast Analysis (Duration set to 0.5 for speed)
                 y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=0.5)
                 
                 if len(y) == 0:
-                    raise Exception("Empty audio file")
+                    raise Exception("Audio file is completely empty after conversion.")
 
-                # ✅ SILENCE DETECTOR ADDED HERE
-                # Measure the RMS energy (volume level) of the audio chunk
+                # ✅ SILENCE DETECTOR
                 rms = librosa.feature.rms(y=y)
                 mean_rms = float(np.mean(rms))
                 
-                # Agar volume 0.01 se kam hai, matlab user kuch nahi baja raha (silence/background noise hai)
-                if mean_rms < 0.01:
-                    print(f"🔇 [AI] Silence Detected (Volume: {mean_rms:.4f}). Ignoring.")
+                if mean_rms < 0.002:
+                    print(f"🔇 [WS BEAT {beat_index}] Silence Detected! Volume: {mean_rms:.4f} is too low. Marked as missed.", flush=True)
                     await websocket.send_json({
                         "beatIndex": beat_index,
                         "expected_chord": expected["chord"],
@@ -178,7 +184,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     continue
 
-                # ✅ Normal Analysis (if audio is loud enough)
+                # ✅ Normal Analysis
                 chroma = librosa.feature.chroma_stft(y=y, sr=sr, n_fft=2048, hop_length=512)
                 user_chroma = chroma.mean(axis=1)
                 
@@ -188,12 +194,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 ref_chroma = np.array(expected["chroma"])
                 confidence = float(np.dot(user_chroma, ref_chroma))
                 
-                # Threshold adjusted for real human playing (0.65)
                 is_correct = confidence >= 0.65 
 
                 process_time = time.time() - start_time  # ⏱️ End timer
 
-                print(f"✅ [AI Done] Processed in {process_time:.3f}s | Vol: {mean_rms:.3f} | Expected: {expected['chord']} | Conf: {confidence:.2f} | Match: {is_correct}")
+                # ✨ THE MASTER LOG (Shows everything clearly)
+                match_status = "✅ MATCH" if is_correct else "❌ WRONG"
+                print(f"🎯 [WS BEAT {beat_index}] AI DONE in {process_time:.3f}s | Vol: {mean_rms:.3f} | Expected: {expected['chord']} | AI Confidence: {confidence:.2f} -> {match_status}", flush=True)
 
                 # 5. Send Instant Reply to React
                 await websocket.send_json({
@@ -205,7 +212,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
 
             except Exception as e:
-                print(f"⚠️ [WS Error] Analysis failed: {e}")
+                print(f"⚠️ [WS BEAT {beat_index}] ERROR during analysis: {e}", flush=True)
                 await websocket.send_json({
                     "beatIndex": beat_index,
                     "expected_chord": expected["chord"],
@@ -223,9 +230,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     except: pass
 
     except WebSocketDisconnect:
-        print("❌ [WS] Client disconnected")
+        print("❌ [WEBSOCKET] Client disconnected. Session ended.", flush=True)
     except Exception as e:
-        print(f"⚠️ [WS] General Error: {e}")
+        print(f"⚠️ [WEBSOCKET] Critical Connection Error: {e}", flush=True)
+
 
 # ===============================
 # Realtime Chunk Feedback (OLD HTTP - Kept as fallback, updated for speed)
@@ -261,13 +269,11 @@ async def realtime_chunk(
         if not os.path.exists(wav_path):
              return {"expected_chord": expected["chord"], "confidence": 0.0, "is_correct": False}
 
-        # ✅ Speed update here as well
         y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=0.5)
 
         if len(y) == 0:
              return {"expected_chord": expected["chord"], "confidence": 0.0, "is_correct": False}
 
-        # ✅ STFT update here as well
         chroma = librosa.feature.chroma_stft(y=y, sr=sr, n_fft=2048, hop_length=512)
         user_chroma = chroma.mean(axis=1)
         
@@ -285,7 +291,7 @@ async def realtime_chunk(
         }
 
     except Exception as e: 
-        print(f"❌ Realtime HTTP Error: {e}")
+        print(f"❌ Realtime HTTP Error: {e}", flush=True)
         return { "expected_chord": expected["chord"] if expected else None, "confidence": 0.0, "is_correct": False }
 
     finally:

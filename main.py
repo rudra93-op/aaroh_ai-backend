@@ -94,7 +94,7 @@ def song_state():
     }
 
 # ==========================================
-# ⚡ NEW: WEBSOCKET REALTIME ENDPOINT (Fast & Accurate) ⚡
+# ⚡ NEW: WEBSOCKET REALTIME ENDPOINT (Fast & Accurate + Silence Detection) ⚡
 # ==========================================
 @app.websocket("/ws/realtime")
 async def websocket_endpoint(websocket: WebSocket):
@@ -161,7 +161,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 if len(y) == 0:
                     raise Exception("Empty audio file")
 
-                # ✅ STFT used instead of CQT for 10x faster processing
+                # ✅ SILENCE DETECTOR ADDED HERE
+                # Measure the RMS energy (volume level) of the audio chunk
+                rms = librosa.feature.rms(y=y)
+                mean_rms = float(np.mean(rms))
+                
+                # Agar volume 0.01 se kam hai, matlab user kuch nahi baja raha (silence/background noise hai)
+                if mean_rms < 0.01:
+                    print(f"🔇 [AI] Silence Detected (Volume: {mean_rms:.4f}). Ignoring.")
+                    await websocket.send_json({
+                        "beatIndex": beat_index,
+                        "expected_chord": expected["chord"],
+                        "detected_chord": "Silence",
+                        "is_match": False,
+                        "confidence": 0.0
+                    })
+                    continue
+
+                # ✅ Normal Analysis (if audio is loud enough)
                 chroma = librosa.feature.chroma_stft(y=y, sr=sr, n_fft=2048, hop_length=512)
                 user_chroma = chroma.mean(axis=1)
                 
@@ -171,12 +188,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 ref_chroma = np.array(expected["chroma"])
                 confidence = float(np.dot(user_chroma, ref_chroma))
                 
-                # ✅ Threshold adjusted for real human playing (0.65)
+                # Threshold adjusted for real human playing (0.65)
                 is_correct = confidence >= 0.65 
 
                 process_time = time.time() - start_time  # ⏱️ End timer
 
-                print(f"✅ [AI Done] Processed in {process_time:.3f}s | Expected: {expected['chord']} | Conf: {confidence:.2f} | Match: {is_correct}")
+                print(f"✅ [AI Done] Processed in {process_time:.3f}s | Vol: {mean_rms:.3f} | Expected: {expected['chord']} | Conf: {confidence:.2f} | Match: {is_correct}")
 
                 # 5. Send Instant Reply to React
                 await websocket.send_json({
@@ -209,7 +226,6 @@ async def websocket_endpoint(websocket: WebSocket):
         print("❌ [WS] Client disconnected")
     except Exception as e:
         print(f"⚠️ [WS] General Error: {e}")
-
 
 # ===============================
 # Realtime Chunk Feedback (OLD HTTP - Kept as fallback, updated for speed)
